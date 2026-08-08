@@ -20,10 +20,14 @@ SPDX-License-Identifier: BSL-1.1
 
 -->
 
-# Shield WAF Enterprise 企业版 v5.3.0
+# Shield 盾甲 WAF 企业版 v5.3.0
 
 > 高性能 Go 语言 Web 应用防火墙 — 55种漏洞防御 + 28种语义解析器 + 14层编码归一化 + AI二次确认 + WAF 3.0 智能引擎 + 流量统一化引擎 + 网段连坐封禁 + 工程稳定性零缺陷
+# Shield WAF Enterprise v5.3.0 (Commercial Edition)
 
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/13720/badge)](https://www.bestpractices.dev/projects/13720)
+
+**Shield WAF Enterprise** is a high-performance **Go Web Application Firewall** for production environments. 55 attack types covered (SQLi/XSS/SSRF/RCE/XXE/SSTI/Deserialization/NoSQL/GraphQL/JNDI...), 28 AST semantic parsers, 14-layer encoding normalization, WAF 3.0 smart engine, AI second-opinion, sandbox (6 engines + VM), subnet co-ban. **OpenSSF Best Practices GOLD** certified (verify: bestpractices.dev/projects/13720). Compared to the open-source PHP edition: 55 vs ~30 vuln types, 28 vs 14 parsers, Go-native concurrency (10,000+ QPS, <5ms p95). Chinese docs below.
 ---
 [![OpenSSF 最佳实践](https://www.bestpractices.dev/projects/13720/badge)](https://www.bestpractices.dev/projects/13720)
 ## 🏆 安全认证
@@ -706,7 +710,7 @@ ai:
 ## 📁 项目结构
 
 ```
-shield-waf-enterprise/
+shield-XXXXXX/
 ├── admin/                    # Admin API 服务
 ├── cmd/
 │   ├── waf-service/          # WAF 代理服务入口
@@ -900,6 +904,5 @@ shield-waf-enterprise/
 - 官网 https://duduziy.com/shield-waf
 - 邮件（QQ）634769642@qq.com
 - 微信公众号：hkjs6986
-- 仓库（GitHub）：https://github.com/anye1991/shield-waf-enterprise
-- 仓库（Gitee）：https://gitee.com/nights-shadow/shield-waf-enterprise
+- 开源版仓库（Gitee）：https://github.com/anye1991/shield-waf-master
 - Issues：通过 GitHub Issues 反馈问题 
