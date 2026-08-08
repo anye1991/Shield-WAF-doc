@@ -21,6 +21,7 @@ SPDX-License-Identifier: BSL-1.1
 -->
 
 # Shield 盾甲 WAF 企业版 v5.3.0
+
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/13720/badge)](https://www.bestpractices.dev/projects/13720)
 
 **Shield WAF Enterprise** is a high-performance **Go Web Application Firewall** for production environments. 55 attack types covered (SQLi/XSS/SSRF/RCE/XXE/SSTI/Deserialization/NoSQL/GraphQL/JNDI...), 28 AST semantic parsers, 14-layer encoding normalization, WAF 3.0 smart engine, AI second-opinion, sandbox (6 engines + VM), subnet co-ban. **OpenSSF Best Practices GOLD** certified (verify: bestpractices.dev/projects/13720). Compared to the open-source PHP edition: 55 vs ~30 vuln types, 28 vs 14 parsers, Go-native concurrency (10,000+ QPS, <5ms p95). Chinese docs below.
