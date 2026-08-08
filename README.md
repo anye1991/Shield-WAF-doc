@@ -7,7 +7,7 @@ Licensed under the Business Source License 1.1 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at:
 
-    https://duduziy.com/Shield–waf
+    https://duduziy.com/shield-waf
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -334,4 +334,572 @@ Shield WAF Enterprise 是面向企业级用户的商业版 Web 应用防火墙�
 - 异常Accept顺序
 
 ### 蜜罐系统
--
+- **路径蜜罐**：动态token，30分钟有效期，访问即封禁
+- **HTML注入**：在响应HTML中注入3-5个隐藏链接，多种CSS隐藏方式
+- 爬虫解析HTML后点击蜜罐链接 → 自动封禁IP
+
+### JS挑战（Go版独有）
+- 客户端必须执行JS才能通过
+- 对无头浏览器/爬虫效果好
+- PHP版没有此功能
+
+---
+
+## 📁 文件上传检测
+
+### 9层检测 + 5项增强
+
+| 层 | 检测维度 | 说明 |
+|----|---------|------|
+| 1 | 扩展名白名单 | 双扩展名/空字节截断检测 |
+| 2 | MIME类型检测 | 请求头+幻数+**真实MIME探测** |
+| 3 | GD图像验证 | **完整Decode全图**（PHP版只解析头部） |
+| 4 | 文件幻数检测 | 13种格式（含PDF/ZIP/EXE/ELF等） |
+| 5 | 文件名特征 | 6维度（双扩展/空字节/路径遍历/特殊名/过长/控制字符） |
+| 6 | SVG专用检测 | 7维度（含外部资源检测） |
+| 7 | 图片马检测 | 9种特征+多特征加分 |
+| 8 | 内容WebShell | PHP/ASP/JSP 3语言 |
+| 9 | 空文件/极小文件 | 空文件和极小文件检测 |
+
+### 5项增强功能（v4.3.0新增）
+
+| 功能 | 说明 |
+|------|------|
+| **14层编码归一化** | 上传文件内容编码绕过检测（base64混淆、双重编码等） |
+| **语义分析接入** | 上传内容走AST语义引擎分析 |
+| **启发式检测** | base64次数、chr()混淆、goto混淆、超长行、混淆变量名 |
+| **恶意代码定位** | 行号+列号+偏移+上下文片段，最多20条 |
+| **AutoLearn闭环** | 高风险且多引擎命中（≥3）自动投喂学习系统 |
+
+### 多引擎交叉验证（12维度）
+特征码 / 归一化 / 规则 / 语义 / 结构 / 启发式 / 幻数 / MIME / GD / SVG / WebShell / 文件名
+
+---
+
+## 🔒 沙箱系统
+
+### 6引擎交叉验证
+
+| 引擎 | 说明 |
+|------|------|
+| 特征码检测 | 已知攻击特征码匹配 |
+| 归一化检测 | 编码归一化后的特征匹配 |
+| 规则检测 | 自定义规则匹配 |
+| 语义分析 | AST语义解析 |
+| 结构分析 | 请求结构异常检测 |
+| 启发式检测 | 行为模式分析 |
+| **VM执行沙箱** | **Go版独有，模拟执行检测** |
+
+### 三种工作模式
+- **learning**：学习模式，只记录不拦截
+- **baseline**：基线模式，与基线对比
+- **protecting**：保护模式，主动拦截
+
+---
+
+## ⚡ 网段连坐封禁（连根拔起）
+
+v5.3.0 重大新增功能。当攻击者 IP 触发封禁时，**同时封锁其所在整个网段**，让黑客换同网段 IP 也无法继续攻击。
+
+### 工作原理
+
+```
+攻击者 203.0.113.42 发动 SQL 注入 → 被 WAF 拦截
+                                    ↓
+                        ban_threshold 次违规触发封禁
+                                    ↓
+                    ┌───────────────┼───────────────┐
+                    ↓               ↓               ↓
+              单IP封禁         /24 网段封禁     /16 网段封禁
+          203.0.113.42     203.0.113.0/24   203.0.0.0/16
+          (按 ban_durations   (256个IP)      (65536个IP)
+           累进时长)          按 subnet_duration 时长
+```
+
+### IPv4 / IPv6 双支持
+
+| 协议 | 连坐网段 | 覆盖范围 |
+|------|---------|---------|
+| IPv4 | /24 | 256 个 IP |
+| IPv4 | /16 | 65,536 个 IP |
+| IPv6 | /64 | 18.4 × 10¹⁸ 个 IP |
+| IPv6 | /48 | 1.2 × 10²⁴ 个 IP |
+
+### 误封防护机制（5重保障）
+
+| 机制 | 说明 |
+|------|------|
+| **SubnetThreshold 阈值** | 默认 3 次违规才触发网段封禁，=1 即 1 次连根拔起 |
+| **白名单绝对优先** | 白名单 IP 的请求不参与任何封禁检查，永不误封 |
+| **受保护网段** | 内网私有地址段（10.x/172.16.x/192.168.x/127.x）不触发连坐 |
+| **有限封禁时长** | `subnet_duration` 默认 3600 秒（1小时），=0 为永久 |
+| **fail-open 机制** | Redis/存储故障时网段检查放行（不因基础设施故障误封） |
+
+### 配置方法
+
+```yaml
+waf:
+  # 单IP封禁配置
+  ban_on_block: true           # 拦截后自动封禁
+  ban_threshold: 1             # 1次违规即封禁该IP
+  ban_window_sec: 3600         # 计数窗口
+  ban_durations:               # 累进封禁时长
+    - 86400                    # 第1次：1天
+    - 604800                   # 第2次：7天
+    - 2592000                  # 第3次：30天
+    - 0                        # 第4次起：永久
+
+  # 网段连坐封禁配置
+  subnet_ban: true             # 开启网段连坐
+  subnet_threshold: 1          # 1次违规即连根拔起（默认3防误封）
+  subnet_duration: 0           # 0=永久封禁（连根拔起）
+```
+
+> **生产建议**：如果网站有大量用户共享出口 IP（如学校/企业网络），建议 `subnet_threshold: 3` + `subnet_duration: 3600`，避免误伤正常用户。对高安全场景（金融/政企），可设 `subnet_threshold: 1` + `subnet_duration: 0`。
+
+---
+
+## 🔐 安全特性
+
+### 认证与权限
+- ✅ **Argon2id + bcrypt双重哈希** — Shield2格式，惰性升级，多格式兼容
+- ✅ **JWT认证** — 无状态会话管理
+- ✅ **RBAC权限控制** — 细粒度权限管理
+- ✅ **暗门保护** — 双因子验证（Magic Key + 密码），会话与IP绑定，CSRF防护
+
+### 会话安全（5模块）
+- ✅ **CSRF防护** — Origin/Referer校验，Token验证
+- ✅ **Cookie安全** — Secure/HttpOnly/SameSite属性检测
+- ✅ **会话固定防护** — Session ID轮换检测
+- ✅ **会话劫持检测** — 异常IP/UA切换检测
+- ✅ **会话加固** — 会话超时/并发控制
+
+### 传输安全
+- ✅ **HTTPS原生支持** — 全链路TLS加密
+- ✅ **HTTP重定向HTTPS** — 自动跳转
+- ✅ **X-Forwarded-Proto** — 统一协议判断
+- ✅ **代理层安全头** — ModifyResponse注入，默认关闭，后端已有不覆盖
+
+### 误报控制
+- ✅ **FP Guard 20层规则** — 搜索引擎蜘蛛验证/CMS路径豁免/常见业务路径等
+- ✅ **基线白名单** — 自动学习正常流量模式
+- ✅ **语义分析+编码归一化** — 深度理解请求含义
+- ✅ **搜索引擎蜘蛛DNS验证** — 反向DNS+正向验证
+
+### 其他安全
+- ✅ **操作审计日志** — 全链路可追溯
+- ✅ **Redis键名安全** — 用户输入哈希防内存膨胀
+- ✅ **输入大小限制** — 防DoS攻击
+- ✅ **正则ReDoS防护** — 优化正则防回溯攻击
+- ✅ **请求走私防护** — hop-by-hop头清理 + Content-Length校验
+- ✅ **深度代码审计** — 77项安全问题全部修复
+
+---
+
+## 🌊 流量统一化引擎
+
+通过可信度评分（0-100分）对流量进行分层处理，在WAF检测前过滤60%的DDoS流量。
+
+| 模块 | 说明 |
+|------|------|
+| HTTP指纹识别 | 请求头顺序/缺失头/TLS指纹 |
+| 行为模式分析 | 请求频率/路径模式/资源偏好 |
+| IP信誉系统 | 已知恶意IP/搜索引擎IP/CDN IP |
+| JS挑战验证 | 客户端JS执行验证 |
+| 分层限流 | IP+URI维度限流 |
+| 可信度评分 | 0-100分，分层处理 |
+
+---
+
+## 🚀 快速开始
+
+### 方式一：二进制解压即用（推荐）
+
+零依赖，上传解压直接启动。
+
+```bash
+# 1. 上传并解压
+
+
+# 2. 修改配置
+vi configs/config.yaml
+#   - proxy.backend_url: 指向你的真实后端网站
+#   - admin.username/password: 修改默认账号密码
+#   - redis.addr: 配置 Redis 地址
+
+# 3. 启动服务
+chmod +x start.sh
+./start.sh
+
+# 4. 访问
+# WAF 代理地址：http://服务器IP （标准80端口，用户直接访问被保护网站，无需带端口）
+# 管理控制台：  http://127.0.0.1:8081/admin （仅本地访问，远程请用SSH隧道或配置admin.tls）
+# 默认账号：admin （密码见 configs/config.yaml）
+```
+
+#### 配置 HTTPS
+
+已有 SSL 证书的话，编辑 `configs/config.yaml`：
+
+```yaml
+proxy:
+  tls:
+    enabled: true
+    cert_file: /path/to/your_domain.crt
+    key_file: /path/to/your_domain.key
+    listen_addr: ":443"
+    redirect_http: true  # HTTP自动跳转HTTPS
+
+admin:
+  tls:
+    enabled: true
+    cert_file: /path/to/your_domain.crt
+    key_file: /path/to/your_domain.key
+    listen_addr: ":8443"
+```
+
+### 方式二：Docker 部署
+
+```bash
+cp configs/config.yaml.example configs/config.yaml
+# 修改 proxy.backend_url 指向你的真实后端网站
+docker compose up -d --build
+```
+
+### 方式三：源码构建
+
+```bash
+# 环境要求：Go >= 1.25, Node.js >= 20, Redis >= 7
+
+# 构建前端
+cd web-admin && pnpm install && pnpm run build && cd ..
+
+# 构建后端
+go build -o bin/waf-service ./cmd/waf-service
+go build -o bin/admin-service ./cmd/admin-service
+
+# 启动
+./bin/waf-service
+./bin/admin-service
+```
+
+---
+
+## ⚙️ 配置说明
+
+配置文件：`configs/config.yaml`
+
+### 核心配置
+
+```yaml
+app:
+  name: shield-waf
+  version: 5.3.0
+  mode: release
+
+waf:
+  block_threshold: 70       # 拦截阈值
+  observe_threshold: 50     # 观察阈值
+  log_threshold: 30         # 日志阈值
+  enable_semantic: true     # 语义分析（建议开启）
+  enable_normalizer: true   # 编码归一化（建议开启）
+  enable_fp_guard: true     # 误报防护
+  max_body_size: 10485760   # 最大Body大小（10MB）
+  # 自动封禁
+  ban_on_block: true        # 拦截后自动封禁
+  ban_threshold: 1          # 1次违规即封禁
+  # 网段连坐封禁
+  subnet_ban: true          # 开启网段连坐
+  subnet_threshold: 1       # 1次违规连根拔起
+  subnet_duration: 0        # 0=永久
+
+proxy:
+  listen_addr: ":80"        # WAF代理监听地址，标准80端口，用户无需带端口访问
+  backend_url: "http://127.0.0.1:8080" # 被保护的真实业务后端，不能指向admin服务地址
+  rewrite_host: false       # 是否重写Host头
+  tls:
+    enabled: false
+    cert_file: ""
+    key_file: ""
+    listen_addr: ":443"
+    redirect_http: false
+  # 代理层安全头（默认关闭，开启后自动给后端响应加安全头）
+  security_headers:
+    enabled: false            # 默认关闭
+    override_existing: false  # 后端已有就不覆盖
+    frame_options: "SAMEORIGIN"
+    content_type_nosniff: true
+    xss_protection: "1; mode=block"
+    referrer_policy: "strict-origin-when-cross-origin"
+    hsts: false               # HSTS慎开
+    hsts_max_age: 31536000
+    hsts_include_sub: false
+    csp: ""                   # CSP太危险，必须显式配置
+    permissions_policy: ""
+
+# 以下功能全部默认关闭，按需开启
+ratelimit:
+  enabled: false              # 限流（默认关）
+  per_minute: 600
+  per_second: 50
+
+cc_protection:
+  enabled: false              # CC防护（默认关）
+
+bot:
+  enabled: false              # Bot检测（默认关）
+  verify_dns: true            # DNS反向验证
+  honeypot: true              # 蜜罐
+
+session_security:
+  enabled: false              # 会话安全（默认关）
+  csrf_enabled: true
+  cookie_security: true
+
+traffic:
+  enabled: false              # 流量统一化（默认关）
+
+darkgate:
+  enabled: false              # 暗门保护（需配置magic_key和password）
+
+upload:
+  detection: false            # 上传检测（默认关）
+
+ai:
+  enabled: false              # AI检测（默认关）
+```
+
+### 默认行为（开箱即用，不会误杀）
+
+启动后默认只开启：
+- ✅ WAF核心检测（SQLi/XSS/命令注入等）
+- ✅ 14层编码归一化
+- ✅ 语义分析引擎
+- ✅ FP Guard误报防护
+- ❌ 限流/CC/Bot检测/会话安全/流量统一化（全部默认关闭）
+
+---
+
+## 📈 性能指标
+
+| 指标 | 数值 | 说明 |
+|------|------|------|
+| 单节点 QPS | 10,000+ | 纯规则检测模式 |
+| 延迟 | < 5ms | p95 检测耗时 |
+| 并发连接 | 100,000+ | Go 原生 goroutine |
+| 内存占用 | < 200MB | 常规负载 |
+| 规则匹配 | 微秒级 | 优化正则 + 多模匹配 |
+
+### 安全能力测试
+
+| 测试维度 | 结果 | 说明 |
+|----------|------|------|
+| 基础攻击检测率 | **98.7%** | 76/77 攻击用例被检测 |
+| 抗击穿率 | **96.8%** | 30/31 混淆绕过被检测 |
+| 误报率（拦截） | **0.00%** | 0/28 正常流量无误拦截 |
+| 误报率（日志） | **3.6%** | 少量正常流量仅记录日志 |
+| 编码绕过检测 | **100%** | 14层编码归一化全部覆盖 |
+| 深度代码审计 | ✅ 通过 | 77项安全问题全部修复 |
+
+---
+
+## 📁 项目结构
+
+```
+shield-waf-enterprise/
+├── admin/                    # Admin API 服务
+├── cmd/
+│   ├── waf-service/          # WAF 代理服务入口
+│   └── admin-service/        # Admin 管理服务入口
+├── configs/
+│   ├── config.yaml           # 配置文件
+│   └── config.yaml.example   # 配置示例
+├── internal/                 # 核心引擎
+│   ├── core/
+│   │   ├── normalizer/       # 14层编码归一化
+│   │   ├── detector/         # 规则检测器（800+规则）
+│   │   ├── scorer/           # 评分器 + FP Guard(20层) + 基线白名单
+│   │   └── engine.go         # 融合决策引擎
+│   ├── defense/              # 55种攻击防御模块
+│   │   ├── upload.go         # 文件上传检测（9层+5增强）
+│   │   └── session/          # 会话安全（5模块）
+│   ├── semantic/
+│   │   └── parsers/          # 28种语义解析器
+│   │       ├── context_analyzer.go  # 语义上下文分析器
+│   │       ├── cross_language.go    # 跨语言嵌套处理
+│   │       ├── code_understander.go # 代码理解器（7语言）
+│   │       └── ...                  # SQL/XSS/Cmd/SSRF等解析器
+│   ├── bot/                  # Bot防护
+│   │   ├── detector.go       # 检测器（49种指纹）
+│   │   ├── bot_semantic.go   # 语义分析（6大指标）
+│   │   ├── bot_scorer.go     # 四维评分
+│   │   ├── bot_classifier.go # 6分类
+│   │   ├── header_fingerprint.go # 请求头指纹（8种异常）
+│   │   ├── honeypot.go       # 路径蜜罐
+│   │   ├── honeypot_injector.go # HTML注入蜜罐
+│   │   └── behavior_analyzer.go  # 行为分析
+│   ├── traffic/              # 流量统一化引擎
+│   ├── sandbox/              # 沙箱（6引擎）
+│   ├── crypto/               # 双重密码加密
+│   ├── ai/                   # AI检测集成
+│   ├── rules/                # 规则管理
+│   ├── learn/                # 基线自学习
+│   ├── storage/              # 存储层（Redis + Memory）
+│   ├── config/               # 配置管理
+│   └── ...
+├── waf/
+│   ├── service.go            # WAF服务主入口
+│   ├── middleware/           # 中间件
+│   │   ├── waf.go            # WAF检测
+│   │   ├── cors.go           # CORS处理
+│   │   ├── security_headers.go # 安全头
+│   │   ├── darkgate.go       # 暗门保护
+│   │   ├── bot_middleware.go # Bot防护
+│   │   ├── upload_middleware.go # 上传检测
+│   │   └── ...
+│   └── proxy/
+│       └── proxy.go          # 反向代理（含安全头注入）
+├── web-admin/                # 前端管理控制台
+├── release/                  # 部署包
+│   └── shield-waf-enterprise-v4.6.0-linux-amd64.tar.gz
+├── .github/workflows/        # CI/CD
+├── Dockerfile
+├── docker-compose.yml
+└── README.md
+```
+
+---
+
+## 📝 版本变更日志
+
+### v5.3.0（当前版本）
+
+**新增功能：**
+- **网段连坐封禁（连根拔起）**：1次违规→/24+/16网段永久封锁（IPv6 /64+/48），新增 `SubnetThreshold` 可配置阈值
+- **白名单安全优先**：CC/限流/Bot/封禁检查全链路白名单前置，白名单IP永不误封
+- **trusted_cdn_ips 启动校验**：校验CIDR格式，非法配置自动跳过并告警
+- **IPv6 网段支持**：网段计算统一使用 `net.ParseIP`，完整支持 IPv6 /64+/48 连坐封禁
+- **BanManager 优先级链路**：白名单→受保护网段→IP封禁(fail-closed)→网段封禁(fail-open)
+
+**Bug修复：**
+- asyncworker `Stop()` 关闭业务channel导致panic → 仅关闭 `stopCh`
+- asyncworker `Submit()` 向已关闭channel发送panic → 增加 `defer recover()` 保护
+- admin `ccConfig`/`cfg` 共享配置数据竞争 → 增加 `ccConfigMu`/`cfgMu` 互斥锁
+- `subnetsOf` 与 `IsSubnetBanned` 实现不一致 → 统一使用 `net.ParseIP` 计算网段
+- `CheckAndBan` 中 `subnetsOf` 返回切片解构编译错误 → 改为遍历 `cidrs`
+
+### v5.2.0
+
+- 全项目代码深度审计 + 语义引擎加固 + 防御能力极限优化
+- 35+ 高危/中危问题修复，40+ 核心文件，新增代码 600+ 行
+- 28种语义解析器全部添加递归深度限制和类型断言守卫
+- PathTraversal Unicode超长度编码绕过修复
+- SSRF/XXE/SSTI多形态绕过修复
+- 全漏洞极限测试 100% 检出 0% 误报
+
+### v5.1.0
+
+- X-Shield-WAF 品牌响应头体系（3级暴露级别）
+- 反向代理配置优化（标准80端口 + 管理后台本地绑定）
+- 全面代码安全审计（10个问题修复）
+
+### v5.0.0
+
+- WAF 3.0 智能引擎（上下文流+意图预测+融合决策）
+- 本地 AI 模型（朴素贝叶斯分类器，纯Go实现）
+- 攻击记录器闭环（AutoLearn Closed-Loop）
+- 沙箱精准切割增强
+- 33种漏洞极限测试 100% 检出 0% 误报
+
+### v4.6.0
+
+**新增功能：**
+- 代理层安全头注入（ModifyResponse，默认关闭，后端已有不覆盖）
+- WAF自身响应安全头（OpenSSF Gold认证必备）
+- BotSemantic语义分析（6大指标：路径多样性/间隔均匀度/资源偏好/探测评分/UA轮换/爬取深度）
+- BotScorer四维评分（指纹30%+语义30%+行为25%+攻击链15%）
+- BotClassifier 6分类（human/search_engine/social_media/ai/crawler/malicious_bot）
+- 请求头指纹检测（8种异常模式）
+- AI爬虫识别（9种：GPTBot/ClaudeBot等）
+- 社交媒体爬虫识别（10种）
+- SEO工具蜘蛛识别（8种）
+- 蜜罐HTML注入（动态token+隐藏链接）
+
+**兼容性修复：**
+- SecurityHeaders默认全部关闭
+- CORS空配置直接pass
+- 代理转发X-Real-IP/X-Forwarded-For/X-Forwarded-Proto/X-Forwarded-Host
+- 限流/CC/Bot默认全部关闭
+- trace_id响应头不覆盖后端已设置的
+- 自定义Recovery返回502
+
+### v4.3.0
+
+**新增功能：**
+- 上传检测14层编码归一化接入
+- 上传检测语义分析接入
+- 启发式检测（base64/chr/goto/超长行/混淆变量）
+- 恶意代码精确定位（行号+偏移+上下文）
+- 真实MIME探测
+- AutoLearn闭环
+- 多引擎交叉验证从8维升级到12维
+
+### v4.2.0
+
+**Bug修复（49个中危）：**
+- 核心引擎8个（calcDeviation失效/字节rune混乱/重复ToLower等）
+- 代理层10个（Content-Length同步/ContentType绕过/限流无告警等）
+- DarkGate/Bot/FastPath 10个（开放重定向/session并发/TOCTOU等）
+- 防御/语义层11个（cmd注入未用归一化/SSRF误报/XXE误报等）
+- 沙箱10个（medium不拦截/saveManifest失败/变量命名反了等）
+
+### v4.1.0
+
+**Bug修复（20个严重/高危）：**
+- FP Guard搜索引擎蜘蛛UA伪造绕过veto权
+- FP Guard CMS路径过于宽泛导致绕过
+- Body截断后ContentLength未更新导致后端挂起
+- WebSocket头被Director删除
+- 上传文件扩展名白名单未校验
+- DarkGate sessions永不清理导致OOM
+- Bot BanIP用request context导致封禁失效
+- SessionTracker无锁导致并发panic
+- CSRF Origin/Referer缺失返回true导致绕过
+- SQLi签名缺少IgnoreCase导致大写漏检
+- 重复签名导致分数重复累加
+- typeWeights缺失大量类型
+- roundFloat空实现
+
+### v4.0.0
+
+- 深度代码审计（77项安全问题）
+- 15个严重安全漏洞修复
+- 23个高危安全漏洞修复
+- 客户端IP伪造/路径遍历/硬编码密钥/权限校验缺失等修复
+
+### v3.2.0
+
+- 代码理解器（7种语言）
+- 语义上下文分析器
+- 语义等价类扩展（20种）
+- 攻击意图推理（15种）
+- FP Guard误报防护（16层→20层）
+- OpenSSF Best Practices认证文件
+
+---
+
+## 📄 License
+
+**商业专有软件** — 未经授权不得商用、分发或修改。
+
+> PHP 版为开源版本（MIT），Go 企业版为商业版本。
+
+---
+
+## 🤝 联系
+- 官网 https://duduziy.com/shield-waf
+- 邮件（QQ）634769642@qq.com
+- 微信公众号：hkjs6986
+- 仓库（GitHub）：https://github.com/anye1991/shield-waf-enterprise
+- 仓库（Gitee）：https://gitee.com/nights-shadow/shield-waf-enterprise
+- Issues：通过 GitHub Issues 反馈问题 
